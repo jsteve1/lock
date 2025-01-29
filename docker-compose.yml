@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    command: fastapi
+    ports:
+      - "8080:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/keepclone
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-for-development}
+      - REDIS_URL=redis://redis:6379/0
+      - UPLOAD_DIR=/app/uploads
+      - MAX_UPLOAD_SIZE=104857600
+      - ENABLE_HTTPS=true
+    volumes:
+      - ./uploads:/app/uploads
+      - ./src:/app/src  # For development hot-reload
+      - ./ssl:/app/ssl  # For SSL certificates
+    depends_on:
+      - db
+      - redis
+    networks:
+      - keepclone-network
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=keepclone
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - keepclone-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - keepclone-network
+
+  celery:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    command: celery
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/keepclone
+      - REDIS_URL=redis://redis:6379/0
+      - ENABLE_HTTPS=true
+    volumes:
+      - ./src:/app/src  # For development hot-reload
+      - ./ssl:/app/ssl  # For SSL certificates
+    depends_on:
+      - backend
+      - redis
+    networks:
+      - keepclone-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./uploads:/app/uploads
+      - ./ssl:/etc/nginx/ssl:ro  # Mount SSL certificates
+    depends_on:
+      - backend
+    networks:
+      - keepclone-network
+
+networks:
+  keepclone-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads: 
