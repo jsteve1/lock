@@ -25,10 +25,11 @@ class Note(Base):
     _title = Column("title", String)  # Encrypted title
     _content = Column("content", Text)  # Encrypted content
     color = Column(String, default="#ffffff")
-    is_archived = Column(Boolean, default=False)
+    status = Column(String, default="active")  # active, archived, trash
     is_pinned = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)  # When moved to trash
     owner_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="notes", lazy="joined")
     attachments = relationship("Attachment", back_populates="note", cascade="all, delete-orphan")

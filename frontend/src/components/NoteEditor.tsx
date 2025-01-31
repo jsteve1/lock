@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'preact/hooks';
 import { route } from 'preact-router';
-import { notesApi, Attachment } from '../services/api';
+import { notesApi, attachmentsApi, Attachment } from '../services/api';
 import { encrypt, decrypt, encryptFile } from '../services/encryption';
 import { addNote, updateNote } from '../store/notes';
+import { isAuthenticated } from '../store/auth';
 
 interface NoteEditorProps {
   id?: string;
@@ -29,9 +30,15 @@ export default function NoteEditor({ id }: NoteEditorProps) {
   const [isPinned, setIsPinned] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    if (!isAuthenticated.value) {
+      route('/login');
+      return;
+    }
+    
     if (id) {
       loadNote();
     }
@@ -108,14 +115,20 @@ export default function NoteEditor({ id }: NoteEditorProps) {
       return;
     }
 
+    setIsUploading(true);
+    setError('');
+
     try {
       const { encryptedData, contentType } = await encryptFile(file, encryptionKey);
-      // TODO: Implement file upload with encrypted data and content type
-      // await attachmentsApi.uploadAttachment(parseInt(id), new File([encryptedData], file.name, { type: contentType }));
-      setError('File upload not yet implemented');
+      const encryptedFile = new File([encryptedData], file.name, { type: contentType });
+      const attachment = await attachmentsApi.uploadAttachment(parseInt(id!), encryptedFile);
+      setAttachments(prev => [...prev, attachment]);
+      target.value = ''; // Clear the file input
     } catch (err) {
       setError('Failed to upload file');
       console.error(err);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -172,27 +185,35 @@ export default function NoteEditor({ id }: NoteEditorProps) {
               onChange={handleFileUpload}
               class="hidden"
               id="file-upload"
-              accept="image/*,audio/*"
+              accept="image/*,application/pdf"
+              disabled={isUploading}
             />
           )}
           {id && (
             <label
               htmlFor="file-upload"
-              class="cursor-pointer p-2 rounded-full text-gray-600 hover:bg-gray-100"
+              class={`cursor-pointer p-2 rounded-full text-gray-600 hover:bg-gray-100 ${isUploading ? 'opacity-50' : ''}`}
             >
-              <svg
-                class="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-                />
-              </svg>
+              {isUploading ? (
+                <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" />
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : (
+                <svg
+                  class="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                  />
+                </svg>
+              )}
             </label>
           )}
         </div>

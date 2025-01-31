@@ -25,37 +25,6 @@ class TokenData(BaseModel):
     email: Optional[str] = None
     key: Optional[str] = None
 
-class NoteBase(BaseModel):
-    title: str = Field(min_length=1)
-    content: Optional[str] = None
-    color: str = "#ffffff"
-    is_archived: bool = False
-    is_pinned: bool = False
-
-class NoteCreate(NoteBase):
-    pass
-
-class NoteUpdate(BaseModel):
-    title: Optional[str] = None
-    content: Optional[str] = None
-    color: Optional[str] = None
-    is_archived: Optional[bool] = None
-    is_pinned: Optional[bool] = None
-
-class Note(BaseModel):
-    id: int
-    title: Optional[str] = None
-    content: Optional[str] = None
-    color: str = "#ffffff"
-    is_archived: bool = False
-    is_pinned: bool = False
-    created_at: datetime
-    updated_at: datetime
-    owner_id: int
-
-    class Config:
-        from_attributes = True
-
 class AttachmentBase(BaseModel):
     filename: str
     content_type: str
@@ -70,4 +39,32 @@ class Attachment(AttachmentBase):
         from_attributes = True
         json_encoders = {
             bytes: lambda v: base64.b64encode(v).decode() if v else None
-        } 
+        }
+
+class NoteBase(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    color: Optional[str] = None
+    status: Optional[str] = Field(
+        default='active',
+        description='Note status (active, archived, or trash)',
+        pattern='^(active|archived|trash)$'
+    )
+    is_pinned: Optional[bool] = None
+    deleted_at: Optional[datetime] = None
+
+class NoteCreate(NoteBase):
+    title: str
+    content: str
+
+class NoteUpdate(NoteBase):
+    pass
+
+class Note(NoteBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    attachments: Optional[List['Attachment']] = []
+
+    class Config:
+        from_attributes = True 

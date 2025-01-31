@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, status, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, Query, Response, Request, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -24,15 +24,19 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS middleware setup with proper preflight handling
+# CORS middleware setup with specific origins
+origins = [
+    "http://localhost:5173",  # Vite dev server
+    "http://localhost:8080",  # Production frontend
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=3600,  # Cache preflight requests for 1 hour
+    expose_headers=["Content-Length", "Content-Range", "Content-Type"]
 )
 
 # OAuth2 scheme for JWT token authentication

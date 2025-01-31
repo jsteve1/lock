@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { generateEncryptionKey } from './encryption';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -24,11 +24,12 @@ export interface Note {
   title: string;
   content: string;
   color: string;
-  is_archived: boolean;
+  status: 'active' | 'archived' | 'trash';
   is_pinned: boolean;
   created_at: string;
   updated_at: string;
-  attachments: Attachment[];
+  deleted_at?: string;
+  attachments?: Attachment[];
 }
 
 export interface Attachment {
@@ -36,15 +37,21 @@ export interface Attachment {
   filename: string;
   content_type: string;
   created_at: string;
+  note_id: number;
 }
 
 // Auth API
 export const authApi = {
   login: async (email: string, password: string) => {
-    const response = await api.post('/token', new URLSearchParams({
-      username: email,
-      password,
-    }));
+    const formData = new URLSearchParams();
+    formData.set('username', email);  // Backend expects 'username' field
+    formData.set('password', password);
+    
+    const response = await api.post('/token', formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
     return response.data;
   },
 
@@ -81,8 +88,15 @@ export const notesApi = {
     return response.data;
   },
 
-  updateNote: async (id: number, note: { title?: string; content?: string; color?: string; is_pinned?: boolean }) => {
-    const response = await api.patch(`/notes/${id}`, note);
+  updateNote: async (id: number, note: { 
+    title?: string; 
+    content?: string; 
+    color?: string; 
+    is_pinned?: boolean;
+    status?: 'active' | 'archived' | 'trash';
+    deleted_at?: string;
+  }) => {
+    const response = await api.put(`/notes/${id}`, note);
     return response.data;
   },
 
@@ -93,15 +107,31 @@ export const notesApi = {
 
 // Attachments API
 export const attachmentsApi = {
-  uploadAttachment: async (noteId: number, file: File) => {
+  uploadAttachment: async (noteId: number, file: File, onProgress?: (progress: number) => void) => {
+    console.log('Starting attachment upload:', { noteId, fileName: file.name });
     const formData = new FormData();
     formData.append('file', file);
-    const response = await api.post(`/notes/${noteId}/attachments`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return response.data;
+    
+    try {
+      const response = await api.post(`/notes/${noteId}/attachments`, formData, {
+        headers: {
+          // Remove content-type to let browser set it with boundary
+          'Content-Type': undefined,
+        },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total && onProgress) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            console.log('Upload progress:', percentCompleted);
+            onProgress(percentCompleted);
+          }
+        },
+      });
+      console.log('Upload response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Upload request failed:', error);
+      throw error;
+    }
   },
 
   getAttachments: async (noteId: number) => {
@@ -111,5 +141,15 @@ export const attachmentsApi = {
 
   deleteAttachment: async (noteId: number, attachmentId: number) => {
     await api.delete(`/notes/${noteId}/attachments/${attachmentId}`);
+  },
+
+  getAttachmentContent: async (noteId: number, attachmentId: number) => {
+    const response = await api.get(`/notes/${noteId}/attachments/${attachmentId}/content`, {
+      responseType: 'blob',
+      headers: {
+        'Accept': '*/*'  // Accept any content type
+      }
+    });
+    return URL.createObjectURL(response.data);
   },
 }; 
