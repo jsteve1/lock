@@ -5,21 +5,31 @@ import Header from './components/Header';
 import Login from './components/Login';
 import Register from './components/Register';
 import NotesList from './components/NotesList';
-import NoteEditor from './components/NoteEditor';
 import { Note } from './services/api';
 import { signal } from '@preact/signals';
-import { isAuthenticated } from './store/auth';
+import { isAuthenticated, startTokenRefresh, stopTokenRefresh } from './store/auth';
 import { route } from 'preact-router';
 import { getThemeClasses } from './theme';
+import { currentTheme } from './store/theme';
 
 export const notes = signal<Note[]>([]);
 
-export function App() {
+export default function App() {
   useEffect(() => {
     // Check authentication on mount
     if (!isAuthenticated.value && window.location.pathname !== '/register') {
       route('/login');
     }
+
+    // Start token refresh if user is authenticated
+    if (isAuthenticated.value) {
+      startTokenRefresh();
+    }
+
+    // Clean up on unmount
+    return () => {
+      stopTokenRefresh();
+    };
   }, []);
 
   // Handle route changes
@@ -31,17 +41,20 @@ export function App() {
   };
 
   const theme = getThemeClasses();
+  
+  // Force re-render when theme changes
+  currentTheme.value;
 
   return (
     <div class={`min-h-screen flex flex-col ${theme.background}`}>
       <Header />
-      <main class="flex-1 container mx-auto py-6 px-4">
+      <main class={`flex-1 pt-16 pb-8 ${theme.background}`} style={{ height: '100%', padding: '0px' }}>
         <Router onChange={handleRoute}>
           <NotesList path="/" />
+          <NotesList path="/archive" />
+          <NotesList path="/trash" />
           <Login path="/login" />
           <Register path="/register" />
-          <NoteEditor path="/notes/new" />
-          <NoteEditor path="/notes/:id" />
         </Router>
       </main>
     </div>

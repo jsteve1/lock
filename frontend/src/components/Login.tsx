@@ -1,7 +1,9 @@
 import { useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { authApi } from '../services/api';
-import { setAuthenticated } from '../store/auth';
+import { setAuthenticated, startTokenRefresh } from '../store/auth';
+import { getThemeClasses } from '../theme';
+import { currentTheme } from '../store/theme';
 
 interface LoginProps {
   path?: string;
@@ -12,6 +14,7 @@ export default function Login({ path }: LoginProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const theme = getThemeClasses();
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
@@ -20,7 +23,8 @@ export default function Login({ path }: LoginProps) {
 
     try {
       const data = await authApi.login(email, password);
-      setAuthenticated(true, data.access_token);
+      setAuthenticated(true, data.access_token, data.refresh_token);
+      startTokenRefresh();
       route('/');
     } catch (error) {
       console.error('Login error:', error);
@@ -30,12 +34,27 @@ export default function Login({ path }: LoginProps) {
     }
   };
 
+  currentTheme.value;
+
+  const getLoginGradient = () => {
+    switch (currentTheme.value) {
+      case 'light':
+        return 'bg-gradient-to-br from-white via-gray-50 to-gray-100';
+      case 'dark':
+        return 'bg-gradient-to-br from-[#202124] via-[#242528] to-[#2d2e30]';
+      case 'night':
+        return 'bg-gradient-to-br from-[#191919] via-[#1f1f1f] to-[#251a1a]';
+      default:
+        return theme.paper;
+    }
+  };
+
   return (
-    <div class="w-full min-h-screen flex items-center justify-center bg-gray-900 px-4">
-      <div class="w-full max-w-md space-y-8 p-8 bg-gray-800 rounded-lg shadow-xl">
+    <div class={`w-full min-h-screen flex items-center justify-center ${getLoginGradient()}`}>
+      <div class={`w-full max-w-md space-y-8 p-8 ${theme.paper} rounded-lg shadow-xl border ${theme.border}`}>
         <div class="text-center">
-          <h2 class="text-3xl font-bold text-white">Welcome back</h2>
-          <p class="mt-2 text-gray-400">
+          <h2 class={`text-3xl font-bold ${theme.text}`}>Welcome back</h2>
+          <p class={`mt-2 ${theme.textSecondary}`}>
             Sign in to your account
           </p>
         </div>
@@ -51,7 +70,7 @@ export default function Login({ path }: LoginProps) {
             <div>
               <label
                 htmlFor="email"
-                class="block text-sm font-medium text-gray-300"
+                class={`block text-sm font-medium ${theme.textSecondary}`}
               >
                 Email address
               </label>
@@ -61,7 +80,7 @@ export default function Login({ path }: LoginProps) {
                 required
                 value={email}
                 onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
-                class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                class={`mt-1 block w-full px-3 py-2 ${theme.paper} border ${theme.border} rounded-md ${theme.text} placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                 placeholder="you@example.com"
               />
             </div>
@@ -69,7 +88,7 @@ export default function Login({ path }: LoginProps) {
             <div>
               <label
                 htmlFor="password"
-                class="block text-sm font-medium text-gray-300"
+                class={`block text-sm font-medium ${theme.textSecondary}`}
               >
                 Password
               </label>
@@ -79,7 +98,7 @@ export default function Login({ path }: LoginProps) {
                 required
                 value={password}
                 onInput={(e) => setPassword((e.target as HTMLInputElement).value)}
-                class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                class={`mt-1 block w-full px-3 py-2 ${theme.paper} border ${theme.border} rounded-md ${theme.text} placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                 placeholder="••••••••"
               />
             </div>
@@ -89,16 +108,16 @@ export default function Login({ path }: LoginProps) {
             <button
               type="submit"
               disabled={isLoading}
-              class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              class={`w-full flex justify-center py-2 px-4 rounded-md shadow-sm text-sm font-medium ${theme.button} ${theme.buttonHover} focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               {isLoading ? 'Signing in...' : 'Sign in'}
             </button>
           </div>
 
           <div class="text-center">
-            <p class="text-sm text-gray-400">
+            <p class={`text-sm ${theme.textSecondary}`}>
               Don't have an account?{' '}
-              <a href="/register" class="text-blue-500 hover:text-blue-400">
+              <a href="/register" class={`underline ${theme.registerButton}`}>
                 Register
               </a>
             </p>

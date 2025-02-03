@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { generateEncryptionKey } from './encryption';
+import { refreshToken, logout } from '../store/auth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -19,26 +20,34 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-export interface Note {
-  id: number;
-  title: string;
-  content: string;
-  color: string;
-  status: 'active' | 'archived' | 'trash';
-  is_pinned: boolean;
-  created_at: string;
-  updated_at: string;
-  deleted_at?: string;
-  attachments?: Attachment[];
-}
+// Add response interceptor to handle 401 errors
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
 
-export interface Attachment {
-  id: number;
-  filename: string;
-  content_type: string;
-  created_at: string;
-  note_id: number;
-}
+    // If the error is 401 and we haven't tried to refresh the token yet
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      try {
+        // Attempt to refresh the token
+        const refreshed = await refreshToken();
+        if (refreshed) {
+          // Retry the original request with the new token
+          const token = localStorage.getItem('token');
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return api(originalRequest);
+        }
+      } catch (refreshError) {
+        console.error('Token refresh failed:', refreshError);
+        logout();
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 // Auth API
 export const authApi = {
@@ -69,22 +78,63 @@ export const authApi = {
     });
     return response.data;
   },
+
+  refreshToken: async (refreshToken: string) => {
+    const response = await api.post('/token/refresh', { refresh_token: refreshToken });
+    return response.data;
+  },
 };
+
+export interface Note {
+  id: number;
+  title: string;
+  content: string;
+  color: string;
+  status: 'active' | 'archived' | 'trash';
+  is_pinned: boolean;
+  created_at: string;
+  updated_at: string;
+  deleted_at?: string;
+  attachments?: Attachment[];
+}
+
+export interface Attachment {
+  id: number;
+  filename: string;
+  content_type: string;
+  created_at: string;
+  note_id: number;
+}
 
 // Notes API
 export const notesApi = {
   getNotes: async () => {
+    console.log('Fetching all notes');
     const response = await api.get('/notes');
+    console.log('Fetched notes:', response.data);
     return response.data;
   },
 
   getNote: async (id: number) => {
+    console.log('Fetching note:', id);
     const response = await api.get(`/notes/${id}`);
+    console.log('Fetched note:', response.data);
     return response.data;
   },
 
-  createNote: async (note: { title: string; content?: string; color?: string; is_pinned?: boolean }) => {
-    const response = await api.post('/notes', note);
+  createNote: async (note: { 
+    title: string; 
+    content?: string; 
+    color?: string; 
+    is_pinned?: boolean;
+    status?: 'active' | 'archived' | 'trash';
+  }) => {
+    console.log('Creating note:', note);
+    const response = await api.post('/notes', {
+      ...note,
+      status: note.status || 'active'
+    });
+    console.log('Created note:', response.data);
     return response.data;
   },
 
@@ -96,12 +146,16 @@ export const notesApi = {
     status?: 'active' | 'archived' | 'trash';
     deleted_at?: string;
   }) => {
+    console.log('Updating note:', id, note);
     const response = await api.put(`/notes/${id}`, note);
+    console.log('Updated note:', response.data);
     return response.data;
   },
 
-  deleteNote: async (id: number) => {
-    await api.delete(`/notes/${id}`);
+  deleteNote: async (id: number, permanent: boolean = false) => {
+    console.log('Deleting note:', id, permanent ? '(permanent)' : '(to trash)');
+    await api.delete(`/notes/${id}${permanent ? '?permanent=true' : ''}`);
+    console.log('Note deleted:', id);
   },
 };
 

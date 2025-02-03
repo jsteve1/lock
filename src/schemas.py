@@ -19,6 +19,7 @@ class User(UserBase):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str
 
 class TokenData(BaseModel):
@@ -56,6 +57,12 @@ class NoteBase(BaseModel):
 class NoteCreate(NoteBase):
     title: str
     content: str
+    status: str = Field(
+        default='active',
+        description='Note status (active, archived, or trash)',
+        pattern='^(active|archived|trash)$'
+    )
+    is_pinned: bool = False
 
 class NoteUpdate(NoteBase):
     pass

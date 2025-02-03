@@ -26,11 +26,54 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     # Generate encryption key from password
     key, _ = generate_key_from_password(form_data.password, user.encryption_salt)
     
-    access_token = security.create_access_token(data={
+    token_data = {
         "sub": user.email,
         "key": base64.urlsafe_b64encode(key).decode()  # Include encryption key in token
-    })
-    return {"access_token": access_token, "token_type": "bearer"}
+    }
+    
+    access_token = security.create_access_token(data=token_data)
+    refresh_token = security.create_refresh_token(data=token_data)
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+@router.post("/token/refresh", response_model=schemas.Token)
+async def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
+    # Verify the refresh token
+    payload = security.verify_token(refresh_token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Get user from token data
+    user = db.query(models.User).filter(models.User.email == payload["sub"]).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Create new tokens
+    token_data = {
+        "sub": user.email,
+        "key": payload["key"]  # Reuse the encryption key from the refresh token
+    }
+    
+    access_token = security.create_access_token(data=token_data)
+    new_refresh_token = security.create_refresh_token(data=token_data)
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer"
+    }
 
 @router.post("/users", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
 async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
@@ -90,8 +133,8 @@ async def create_note(
         db_note = models.Note(
             owner_id=user.id,
             color=note.color,
-            is_archived=note.is_archived,
-            is_pinned=note.is_pinned,
+            status=note.status or 'active',  # Default to active if not specified
+            is_pinned=note.is_pinned or False,
             owner=user  # Set owner relationship immediately
         )
         
@@ -168,12 +211,22 @@ def update_note(
     key = base64.urlsafe_b64decode(current_user["key"].encode() + b'=' * (-len(current_user["key"]) % 4))
     user.encryption_key = key
     
-    db_note = db.query(models.Note).filter(models.Note.id == note_id, models.Note.owner_id == user.id).first()
+    # Query note with attachments relationship loaded
+    db_note = db.query(models.Note).options(joinedload(models.Note.attachments)).filter(
+        models.Note.id == note_id, 
+        models.Note.owner_id == user.id
+    ).first()
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
     
     # Set owner and encryption key for the note
     db_note.owner = user
+    
+    # Set encryption key for all attachments
+    for attachment in db_note.attachments:
+        attachment.note = db_note
+        attachment.note.owner = user
+        attachment.note.owner.encryption_key = key
     
     # Validate status if provided
     if note_update.status is not None and note_update.status not in ['active', 'archived', 'trash']:
@@ -195,6 +248,14 @@ def update_note(
     try:
         db.commit()
         db.refresh(db_note)
+        
+        # Ensure encryption keys are set after refresh
+        db_note.owner = user
+        for attachment in db_note.attachments:
+            attachment.note = db_note
+            attachment.note.owner = user
+            attachment.note.owner.encryption_key = key
+            
         return db_note
     except Exception as e:
         db.rollback()
@@ -203,6 +264,7 @@ def update_note(
 @router.delete("/notes/{note_id}")
 def delete_note(
     note_id: int,
+    permanent: bool = Query(False, description="Whether to permanently delete the note"),
     current_user: dict = Depends(security.get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -210,18 +272,29 @@ def delete_note(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
+    # Set the encryption key from the token
+    key = base64.urlsafe_b64decode(current_user["key"].encode() + b'=' * (-len(current_user["key"]) % 4))
+    user.encryption_key = key
+    
     db_note = db.query(models.Note).filter(models.Note.id == note_id, models.Note.owner_id == user.id).first()
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
     
-    # Only allow permanent deletion if note is in trash
-    if db_note.status != 'trash':
-        raise HTTPException(status_code=400, detail="Note must be in trash to be permanently deleted")
-    
     try:
-        db.delete(db_note)
+        if permanent:
+            # Only allow permanent deletion if note is in trash
+            if db_note.status != 'trash':
+                raise HTTPException(status_code=400, detail="Note must be in trash to be permanently deleted")
+            db.delete(db_note)
+        else:
+            # Move to trash
+            db_note.status = 'trash'
+            db_note.deleted_at = datetime.utcnow()
+        
         db.commit()
-        return {"status": "success"}
+        return {"status": "success", "action": "deleted" if permanent else "moved_to_trash"}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

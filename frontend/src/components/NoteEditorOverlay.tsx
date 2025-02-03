@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { notesApi, attachmentsApi, type Note, type Attachment } from '../services/api';
 import { notes } from '../app';
-import { getThemeClasses } from '../theme';
+import { getThemeClasses, type ThemeClasses } from '../theme';
 
 interface NoteEditorOverlayProps {
   note?: Note;
@@ -152,11 +152,23 @@ export default function NoteEditorOverlay({ note, onClose }: NoteEditorOverlayPr
   const [uploadError, setUploadError] = useState('');
   const [uploadQueue, setUploadQueue] = useState<{ file: File; retries: number; tempId?: number }[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
-  const [currentNote, setCurrentNote] = useState<Note | undefined>(note);
+  const [currentNote, setCurrentNote] = useState<Note | undefined>(note || {
+    id: -1, // Temporary ID for new notes
+    title: '',
+    content: '',
+    is_pinned: false,
+    status: 'active',
+    color: '#ffffff', // Default color for new notes
+    attachments: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  });
   const [tempBlobUrls, setTempBlobUrls] = useState<Record<number, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const theme = getThemeClasses();
+  const [isNewNote, setIsNewNote] = useState(!note?.id);
+
 
   useEffect(() => {
     const loadFullNote = async () => {
@@ -266,38 +278,39 @@ export default function NoteEditorOverlay({ note, onClose }: NoteEditorOverlayPr
   }, [uploadQueue, isUploading, currentNote]);
 
   const handleSave = async () => {
+    // Don't save empty notes
+    if (!title.trim() && !content.trim()) {
+      onClose();
+      return;
+    }
+
+    if(currentNote?.status === 'trash') {
+      await notesApi.updateNote(currentNote.id, { status: 'active' });
+      notes.refresh();
+      onClose();
+      return;
+    }
+
+    console.log('Saving note:', { title, content, isPinned, currentNote });
     try {
-      if (currentNote?.id) {
+      if (currentNote?.id && !isNewNote && currentNote?.status !== 'archived' && currentNote?.id !== -1) {
         const updatedNote = await notesApi.updateNote(currentNote.id, {
           title,
           content,
-          is_pinned: isPinned
+          is_pinned: isPinned,
+          status: currentNote.status || 'active'
         });
-        if (updatedNote) {
-          // Fetch the full note data to get attachments
-          const fullNote = await notesApi.getNote(updatedNote.id);
-          setCurrentNote(fullNote);
-          const noteIndex = notes.value.findIndex(n => n.id === currentNote.id);
-          if (noteIndex !== -1) {
-            notes.value = [
-              ...notes.value.slice(0, noteIndex),
-              fullNote,
-              ...notes.value.slice(noteIndex + 1)
-            ];
-          }
-        }
-      } else if (title || content) {
+        console.log('Note updated:', updatedNote);
+        notes.refresh();
+      } else {
         const newNote = await notesApi.createNote({
           title,
           content,
-          is_pinned: isPinned
+          is_pinned: isPinned,
+          status: 'active'
         });
-        if (newNote) {
-          // Fetch the full note data to get attachments
-          const fullNote = await notesApi.getNote(newNote.id);
-          setCurrentNote(fullNote);
-          notes.value = [fullNote, ...notes.value];
-        }
+        console.log('New note created:', newNote);
+        notes.refresh();
       }
       onClose();
     } catch (error) {
@@ -360,32 +373,14 @@ export default function NoteEditorOverlay({ note, onClose }: NoteEditorOverlayPr
   const handleDelete = async () => {
     if (!currentNote?.id) return;
     
+    if (!window.confirm('Are you sure you want to delete this note and all its attachments?')) {
+      return;
+    }
+    
     try {
-      if (currentNote.status === 'trash') {
-        // Show confirmation dialog for permanent deletion
-        if (!confirm('This note will be permanently deleted along with all its attachments. This action cannot be undone. Are you sure?')) {
-          return;
-        }
-        await notesApi.deleteNote(currentNote.id);
-        notes.value = notes.value.filter(n => n.id !== currentNote.id);
-      } else {
-        // Move to trash
-        const updatedNote = await notesApi.updateNote(currentNote.id, {
-          ...currentNote,
-          status: 'trash',
-          deleted_at: new Date().toISOString()
-        });
-        if (updatedNote) {
-          const noteIndex = notes.value.findIndex(n => n.id === currentNote.id);
-          if (noteIndex !== -1) {
-            notes.value = [
-              ...notes.value.slice(0, noteIndex),
-              updatedNote,
-              ...notes.value.slice(noteIndex + 1)
-            ];
-          }
-        }
-      }
+      await notesApi.updateNote(currentNote.id, { status: 'trash' });
+      console.log('Note moved to trash');
+      notes.refresh();
       onClose();
     } catch (error) {
       console.error('Failed to delete note:', error);
@@ -393,28 +388,50 @@ export default function NoteEditorOverlay({ note, onClose }: NoteEditorOverlayPr
   };
 
   const handleArchive = async () => {
+    console.log('Archiving note:', currentNote);
     if (!currentNote?.id) return;
     
     try {
-      const updatedNote = await notesApi.updateNote(currentNote.id, {
-        ...currentNote,
-        status: currentNote.status === 'archived' ? 'active' : 'archived'
-      });
-      if (updatedNote) {
-        const noteIndex = notes.value.findIndex(n => n.id === currentNote.id);
-        if (noteIndex !== -1) {
-          notes.value = [
-            ...notes.value.slice(0, noteIndex),
-            updatedNote,
-            ...notes.value.slice(noteIndex + 1)
-          ];
-        }
-      }
+      await notesApi.updateNote(currentNote.id, { status: 'archived' });
+      console.log('Note archived');
+      notes.refresh();
       onClose();
     } catch (error) {
       console.error('Failed to archive note:', error);
     }
   };
+
+  const handleUnarchive = async () => {
+    console.log('Unarchiving note:', currentNote);
+    if (!currentNote?.id) return;
+    
+    try { 
+      await notesApi.updateNote(currentNote.id, { status: 'active' });
+      console.log('Note unarchived');
+      notes.refresh();
+      onClose();
+    } catch (error) {
+      console.error('Failed to unarchive note:', error);
+    }
+  };  
+
+  const handleDeletePermanently = async () => {
+    console.log('Deleting note permanently:', currentNote);
+    if (!currentNote?.id) return;
+    
+    if (!window.confirm('Are you sure you want to permanently delete this note? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      await notesApi.deleteNote(currentNote.id, true);  // Set permanent flag to true
+      console.log('Note deleted permanently');
+      notes.refresh();
+      onClose();
+    } catch (error) {
+      console.error('Failed to delete note permanently:', error);
+    }
+  };  
 
   const handleAttachmentDelete = async (attachmentId: number) => {
     if (!currentNote?.id) return;
@@ -432,105 +449,165 @@ export default function NoteEditorOverlay({ note, onClose }: NoteEditorOverlayPr
       console.error('Failed to delete attachment:', error);
     }
   };
-
+  if(!currentNote) {
+    setIsNewNote(true);
+    setCurrentNote({
+      id: -1,
+      title: '',
+      content: '',
+      is_pinned: false,
+      status: 'active',
+      color: '#ffffff',
+      attachments: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+  }
   return (
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div
-        ref={overlayRef}
-        class={`w-full max-w-2xl ${theme.paper} rounded-lg shadow-xl mx-4`}
+    <div ref={overlayRef} class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div 
+        class={`${theme.paper} rounded-lg shadow-xl max-w-2xl w-full mx-4 overflow-hidden`}
       >
-        <div class="p-4">
-          <div class="flex items-center justify-between mb-4">
-            <input
-              type="text"
-              placeholder="Title"
-              value={title}
-              onChange={(e) => setTitle((e.target as HTMLInputElement).value)}
-              class={`text-xl font-medium bg-transparent border-none outline-none ${theme.text}`}
-            />
-            <div class="flex items-center space-x-2">
+        <div class={`flex justify-between items-center p-2 border-b ${theme.border}`}>
+          <div class="flex items-center gap-2">
+            {currentNote?.status === "active" && (
               <button
-                onClick={handleArchive}
-                class={`p-2 rounded-full hover:bg-gray-700 ${theme.text} transition-colors duration-200`}
-                title={currentNote?.status === 'archived' ? "Unarchive note" : "Archive note"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                </svg>
-              </button>
-              <button
-                onClick={handleDelete}
-                class={`p-2 rounded-full hover:bg-red-500 hover:text-white ${theme.text} transition-colors duration-200`}
-                title={currentNote?.status === 'trash' ? "Delete permanently" : "Move to trash"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-              <button
-                onClick={onClose}
-                class={`p-2 rounded-full hover:bg-gray-700 ${theme.text}`}
-              >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          </div>
-          <textarea
-            placeholder="Take a note..."
-            value={content}
-            onChange={(e) => setContent((e.target as HTMLTextAreaElement).value)}
-            class={`w-full min-h-[200px] bg-transparent border-none outline-none resize-none ${theme.text}`}
-          />
-          
-          {/* Show attachments grid if there are any */}
-          {(currentNote?.attachments?.length || 0) > 0 && currentNote?.attachments && (
-            <div class="mt-4 mb-4">
-              <div class="flex gap-2 overflow-x-auto pb-2 max-w-full scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
-                {currentNote.attachments.map((attachment) => (
-                  <div key={attachment.id} class="flex-none w-20">
-                    <AttachmentPreview 
-                      key={attachment.id} 
-                      attachment={attachment} 
-                      tempBlobUrls={tempBlobUrls}
-                      onDelete={handleAttachmentDelete}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div class={`flex items-center justify-between mt-4 pt-2 border-t ${theme.border}`}>
-            <div class="flex items-center space-x-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                onChange={handleFileUpload}
-                class="hidden"
-                accept="image/*,application/pdf"
-                disabled={!currentNote?.id || isUploading || (currentNote?.attachments?.length || 0) >= 8}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={!currentNote?.id || isUploading || (currentNote?.attachments?.length || 0) >= 8}
-                class={`p-2 rounded-full hover:bg-gray-700 ${theme.text} disabled:opacity-50 disabled:cursor-not-allowed`}
-                title={currentNote?.attachments?.length >= 8 ? "Maximum attachments reached (8)" : "Add attachment"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                </svg>
-              </button>
-            </div>
-            <button
-              onClick={handleSave}
-              class={`px-6 py-2 rounded-md ${theme.text} hover:bg-gray-700`}
+                onClick={() => setIsPinned(!isPinned)}
+                class={`p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full ${isPinned ? 'text-yellow-500' : ''}`}
+                title={isPinned ? 'Unpin' : 'Pin'}
             >
-              Close
+              <svg class="w-5 h-5" fill={isPinned ? 'currentColor' : 'none'} stroke={theme.svgStroke} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+              </svg>
             </button>
+            )}
+
+          </div>
+          <button
+            onClick={onClose}
+            class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"
+            title="Close"
+          >
+            <svg class="w-5 h-5" fill="none" stroke={theme.svgStroke} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="p-4">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.currentTarget.value)}
+            placeholder="Title"
+            class={`w-full bg-transparent border-none focus:outline-none text-lg font-medium mb-2 ${theme.text}`}
+            autoFocus={true}
+          />
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.currentTarget.value)}
+            placeholder="Take a note..."
+            class={`w-full bg-transparent border-none focus:outline-none resize-none min-h-[100px] ${theme.text}`}
+          />
+          <div class="flex flex-wrap gap-2 mt-2">
+            {currentNote?.attachments?.map((attachment) => (
+              <AttachmentPreview
+                key={attachment.id}
+                attachment={attachment}
+                tempBlobUrls={tempBlobUrls}
+                onDelete={handleAttachmentDelete}
+              />
+            ))}
           </div>
         </div>
+        
+        <div class={`flex items-center justify-between p-2 border-t ${theme.border}`}>
+          <div class="flex items-center gap-2">
+            
+          {(currentNote?.status === "active" && !isNewNote) && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              class={`p-2 rounded-full`}
+              title="Add attachment"
+            >
+              <svg class="w-5 h-5" fill="none" stroke={theme.svgStroke} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+            </button> 
+          )}
+
+            {(currentNote?.id || isNewNote) && (
+              <>
+                {!isNewNote && currentNote?.status !== 'archived' && currentNote?.status !== 'trash' && (
+                  <button
+                    onClick={handleArchive}
+                    class={`p-2 rounded-full`}
+                    title="Archive"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke={theme.svgStroke} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                  </svg>
+                  </button>
+                )}
+
+                {(!isNewNote && currentNote?.status !== 'trash') && (
+                  <button
+                    onClick={handleDelete}
+                    class={`p-2 rounded-full`}
+                    title="Delete"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke={theme.svgStroke} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  </button>
+                )}
+
+                {currentNote?.status === 'archived' && (
+                  <button
+                    onClick={handleUnarchive}
+                    class={`p-2 rounded-full`}
+                    title="Unarchive"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke={theme.svgStroke} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                  </svg>
+                  </button>
+                )}
+
+                {currentNote?.status === 'trash' && (
+                  <button
+                    onClick={handleDeletePermanently}
+                    class={`p-2 rounded-full hover:bg-red-100 dark:hover:bg-red-900`}
+                    title="Delete Permanently"
+                  >
+                    <svg class="w-5 h-5" fill="none" stroke={theme.svgStroke} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 11v6m4-6v6" />
+                    </svg>
+                  </button>
+                )}
+
+              </>
+            )}
+          </div>
+          {(title.trim() || content.trim() || isNewNote) && (
+            <button
+              onClick={handleSave}
+              class={`px-4 py-2 ${theme.button} ${theme.buttonHover} rounded disabled:opacity-50`}
+              disabled={title.trim() === '' && content.trim() === ''}
+            >
+              {currentNote?.id ? 'Save' : (!isNewNote && (currentNote && currentNote?.status === "trash") ? 'Restore' : 'Create')}
+            </button>
+          )}
+        </div>
+        
+        <input
+          type="file"
+          ref={fileInputRef}
+          style="display: none"
+          onChange={handleFileUpload}
+          multiple
+        />
       </div>
     </div>
   );

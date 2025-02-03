@@ -1,12 +1,14 @@
 import { route } from 'preact-router';
 import { isAuthenticated, setAuthenticated } from '../store/auth';
 import { useState } from 'preact/hooks';
-import { colorMode, type ColorMode, getThemeClasses } from '../theme';
+import { getThemeClasses, Theme, ThemeClasses } from '../theme';
+import { currentTheme } from '../store/theme';
+import NoteEditorOverlay from './NoteEditorOverlay';
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
-  const theme = getThemeClasses();
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const theme: ThemeClasses = getThemeClasses();
 
   const handleLogout = () => {
     setAuthenticated(false);
@@ -14,14 +16,18 @@ export default function Header() {
   };
 
   const handleThemeChange = () => {
-    const modes: ColorMode[] = ['light', 'dark', 'night'];
-    const currentIndex = modes.indexOf(colorMode.value);
+    const modes: Theme[] = ['light', 'dark', 'night'];
+    const currentIndex = modes.indexOf(currentTheme.value);
     const nextIndex = (currentIndex + 1) % modes.length;
-    colorMode.value = modes[nextIndex];
+    currentTheme.value = modes[nextIndex];
+  };
+
+  const handleCreateNote = () => {
+    setIsEditorOpen(true);
   };
 
   const getThemeIcon = () => {
-    switch (colorMode.value) {
+    switch (currentTheme.value) {
       case 'light':
         return (
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -45,99 +51,93 @@ export default function Header() {
   };
 
   return (
-    <header class={`${theme.paper} border-b ${theme.border}`}>
-      <div class="container mx-auto px-4">
-        <div class="flex justify-between items-center h-16">
-          {/* Logo */}
-          <div class="flex items-center">
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              class={`p-2 rounded-full ${theme.text} hover:bg-gray-700`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <span class={`ml-3 text-xl font-bold ${theme.text} select-none`}>
-              Lock
-            </span>
+    <>
+      <header class={`fixed top-0 left-0 right-0 z-40 ${theme.paper} border-b ${theme.border}`}>
+        <div class="flex items-center justify-between px-4 h-14">
+          <div class="flex items-center gap-4">
+            {isAuthenticated.value && (
+              <button
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                class={`p-2 rounded-full ${theme.buttonHover}`}
+              >
+                <svg class="w-6 h-6" fill="none" stroke={theme.svgStroke} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            )}
+            <h1 class={`text-xl font-medium ${theme.text}`}>Lock</h1>
           </div>
 
-          {/* Actions */}
-          <div class="flex items-center space-x-4">
-            {isAuthenticated.value ? (
-              <>
-                <button
-                  onClick={() => route('/notes/new')}
-                  class={`p-2 rounded-full ${theme.text} hover:bg-gray-700`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                </button>
-                <button
-                  onClick={handleThemeChange}
-                  class={`p-2 rounded-full ${theme.text} hover:bg-gray-700`}
-                >
-                  {getThemeIcon()}
-                </button>
-                <button
-                  onClick={handleLogout}
-                  class={`px-4 py-2 rounded-md ${theme.text} hover:bg-gray-700`}
-                >
-                  Logout
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => route('/login')}
-                  class={`px-4 py-2 rounded-md ${theme.text} hover:bg-gray-700`}
-                >
-                  Login
-                </button>
-                <button
-                  onClick={() => route('/register')}
-                  class="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
-                >
-                  Register
-                </button>
-              </>
+          <div class="flex items-center gap-2">
+            {isAuthenticated.value && (
+              <button
+                onClick={handleCreateNote}
+                class={`p-2 rounded-full ${theme.buttonHover}`}
+                title="Create new note"
+              >
+                <svg class="w-6 h-6" fill="none" stroke={theme.svgStroke} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            )}
+            <button
+              onClick={handleThemeChange}
+              class={`p-2 rounded-full ${theme.text} ${theme.buttonHover}`}
+            >
+              {getThemeIcon()}
+            </button>
+            {isAuthenticated.value && (
+              <button
+                onClick={handleLogout}
+                class={`px-4 py-2 rounded-md ${theme.text} border-none ${theme.buttonHover}`}
+              >
+                Logout
+              </button>
             )}
           </div>
         </div>
-      </div>
 
-      {/* Side Menu */}
-      {isMenuOpen && (
-        <div
-          class={`fixed inset-0 z-50 ${theme.paper}`}
-          onClick={() => setIsMenuOpen(false)}
-        >
-          <div class={`w-64 h-full ${theme.paper} border-r ${theme.border}`}>
-            <div class="p-4">
-              <button
-                onClick={() => { route('/'); setIsMenuOpen(false); }}
-                class={`block w-full text-left px-4 py-2 rounded-md ${theme.text} hover:bg-gray-700`}
-              >
-                Notes
-              </button>
-              <button
-                onClick={() => { route('/archive'); setIsMenuOpen(false); }}
-                class={`block w-full text-left px-4 py-2 rounded-md ${theme.text} hover:bg-gray-700`}
-              >
-                Archive
-              </button>
-              <button
-                onClick={() => { route('/trash'); setIsMenuOpen(false); }}
-                class={`block w-full text-left px-4 py-2 rounded-md ${theme.text} hover:bg-gray-700`}
-              >
-                Trash
-              </button>
+        {/* Side Menu */}
+        {isMenuOpen && isAuthenticated.value && (
+          <>
+            <div
+              class="fixed inset-0 z-50 bg-black bg-opacity-50 transition-opacity"
+              onClick={() => setIsMenuOpen(false)}
+            />
+            <div 
+              class={`fixed left-0 top-0 bottom-0 z-50 w-[300px] ${theme.paper} border-r ${theme.border} transform transition-transform duration-300 ease-in-out ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+            >
+              <div class="p-4">
+                <button
+                  onClick={() => { route('/'); setIsMenuOpen(false); }}
+                  class={`block w-full text-left px-4 py-2 rounded-md ${theme.text} ${theme.buttonHover}`}
+                >
+                  Notes
+                </button>
+                <button
+                  onClick={() => { route('/archive'); setIsMenuOpen(false); }}
+                  class={`block w-full text-left px-4 py-2 rounded-md ${theme.text} ${theme.buttonHover}`}
+                >
+                  Archive
+                </button>
+                <button
+                  onClick={() => { route('/trash'); setIsMenuOpen(false); }}
+                  class={`block w-full text-left px-4 py-2 rounded-md ${theme.text} ${theme.buttonHover}`}
+                >
+                  Trash
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
+          </>
+        )}
+      </header>
+
+      {/* Note Editor Overlay */}
+      {isEditorOpen && (
+        <NoteEditorOverlay
+          onClose={() => setIsEditorOpen(false)}
+        />
       )}
-    </header>
+    </>
   );
 } 

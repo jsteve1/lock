@@ -28,8 +28,8 @@ export const themes = {
     paper: 'bg-[#262626]',
     text: 'text-red-400',
     textSecondary: 'text-red-300',
-    border: 'border-red-900',
-    borderHover: 'hover:border-red-800',
+    border: 'border-red-600',
+    borderHover: 'hover:border-red-600',
     divider: 'border-red-900',
   },
 };
