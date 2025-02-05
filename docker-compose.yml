@@ -74,6 +74,7 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./uploads:/app/uploads
       - ./ssl:/etc/nginx/ssl:ro  # Mount SSL certificates
+      - ./frontend/dist:/app/frontend/dist:ro  # Mount built frontend
     depends_on:
       - backend
     networks:

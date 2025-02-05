@@ -2,7 +2,8 @@ import axios from 'axios';
 import { generateEncryptionKey } from './encryption';
 import { refreshToken, logout } from '../store/auth';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const API_URL = import.meta.env.PROD ? `${BASE_URL}/api` : BASE_URL;
 
 const api = axios.create({
   baseURL: API_URL,
