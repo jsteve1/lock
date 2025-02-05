@@ -67,8 +67,29 @@ else
     pip3 install certbot certbot-nginx
 fi
 
-# Stop the host's nginx service so Docker's nginx container can bind to ports 80 & 443
-print_status "Stopping system nginx service to free up ports 80 and 443..."
+# Before Docker and nginx setup, get SSL certificate first
+print_status "Obtaining SSL certificate..."
+if [ "$SKIP_SSL" != "true" ]; then
+    # Stop any running web servers first to free port 80
+    systemctl stop nginx
+    docker-compose down
+
+    # Try to get certificate
+    if certbot certonly --standalone -d ${DOMAIN_NAME} --non-interactive --agree-tos -m ${EMAIL}; then
+        print_status "SSL certificate obtained successfully"
+    else
+        print_error "SSL certificate setup failed"
+        print_warning "You can set up SSL later by running: certbot certonly --standalone -d ${DOMAIN_NAME}"
+        read -p "Would you like to continue with deployment anyway? (y/n) " RESP_SSL
+        if [[ ! $RESP_SSL =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+fi
+
+# Remove system nginx configuration since we're not using it
+print_status "Removing system nginx configuration..."
+rm -f /etc/nginx/conf.d/*
 systemctl stop nginx
 systemctl disable nginx
 
@@ -157,7 +178,7 @@ ENABLE_HTTPS=true
 EOF
 fi
 
-# Create Docker Compose override file for resource limits
+# Create Docker Compose override file with SSL certificate mounting
 print_status "Creating Docker Compose resource limits..."
 cat > docker-compose.override.yml <<EOF
 services:
@@ -165,7 +186,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 200M
+          memory: 150M
     environment:
       - WORKERS=1
       - MAX_WORKERS=1
@@ -177,20 +198,20 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 128M
 
   redis:
     command: redis-server --maxmemory 32mb --maxmemory-policy allkeys-lru --save "" --appendonly no
     deploy:
       resources:
         limits:
-          memory: 50M
+          memory: 32M
 
   nginx:
     deploy:
       resources:
         limits:
-          memory: 50M
+          memory: 32M
     volumes:
       - /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem:/etc/nginx/ssl/cert.pem:ro
       - /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem:/etc/nginx/ssl/key.pem:ro
@@ -201,13 +222,11 @@ print_status "Creating data directories..."
 mkdir -p /postgres_data /redis_data /uploads
 chown -R 1000:1000 /postgres_data /redis_data /uploads
 
-# Configure Nginx – generate a domain-specific configuration without global directives
-print_status "Configuring Nginx..."
-NGINX_CONF_PATH="/etc/nginx/nginx.conf"
-cat > ${NGINX_CONF_PATH} <<EOF
-# Main nginx configuration
+# Create nginx configuration file
+print_status "Creating nginx configuration..."
+cat > nginx.conf <<EOF
 events {
-    worker_connections 1024;
+    worker_connections 512;
 }
 
 http {
@@ -230,11 +249,6 @@ http {
     gzip_proxied expired no-cache no-store private auth;
     gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml;
     gzip_disable "MSIE [1-6]\.";
-
-    # Upstream for backend
-    upstream backend {
-        server backend:8000;
-    }
 
     # Default server configuration
     server {
@@ -266,7 +280,7 @@ http {
         # API endpoints
         location /api/ {
             rewrite ^/api/(.*) /\$1 break;
-            proxy_pass http://backend;
+            proxy_pass http://backend:8000;
             proxy_http_version 1.1;
             proxy_set_header Upgrade \$http_upgrade;
             proxy_set_header Connection 'upgrade';
@@ -300,27 +314,6 @@ http {
     }
 }
 EOF
-
-# Remove default nginx config and test new configuration
-rm -f /etc/nginx/conf.d/default.conf
-nginx -t && systemctl restart nginx
-
-# SSL Certificate Setup
-if [ "$SKIP_SSL" != "true" ]; then
-    print_status "Obtaining SSL certificate..."
-    if certbot --nginx -d ${DOMAIN_NAME} --non-interactive --agree-tos -m ${EMAIL}; then
-        print_status "SSL certificate obtained successfully"
-    else
-        print_error "SSL certificate setup failed"
-        print_warning "You can set up SSL later by running: certbot --nginx -d ${DOMAIN_NAME}"
-        read -p "Would you like to continue with deployment anyway? (y/n) " RESP_SSL
-        if [[ ! $RESP_SSL =~ ^[Yy]$ ]]; then
-            exit 1
-        fi
-    fi
-else
-    print_warning "Skipping SSL setup as requested"
-fi
 
 # Start the application using Docker Compose
 print_status "Starting application..."
