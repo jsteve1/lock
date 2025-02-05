@@ -202,9 +202,7 @@ chown -R 1000:1000 /postgres_data /redis_data /uploads
 print_status "Configuring Nginx..."
 NGINX_CONF_PATH="/etc/nginx/conf.d/${DOMAIN_NAME}.conf"
 cat > ${NGINX_CONF_PATH} <<EOF
-# Note: Do not include the "worker_processes" directive here.
-worker_rlimit_nofile 2048;
-
+# Note: Removed global directives such as "worker_rlimit_nofile" from this file.
 limit_req_zone \$binary_remote_addr zone=one:5m rate=60r/m;
 proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=app_cache:5m max_size=1g inactive=60m use_temp_path=off;
 
