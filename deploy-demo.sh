@@ -35,12 +35,31 @@ fi
 # Check system requirements
 print_status "Checking system requirements..."
 
-# Check memory
+# Check memory and setup swap if needed
+print_status "Checking memory configuration..."
 MEMORY_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
 MEMORY_GB=$((MEMORY_KB / 1024 / 1024))
 if [ $MEMORY_GB -lt 2 ]; then
-    print_error "Insufficient memory. Minimum 2GB RAM required. Found: ${MEMORY_GB}GB"
-    exit 1
+    print_warning "Low memory detected (${MEMORY_GB}GB). Setting up swap space..."
+    
+    # Check if swap is already enabled
+    if free | awk '/^Swap:/ {exit !$2}'; then
+        print_status "Swap is already enabled"
+    else
+        # Create and enable 2GB swap file
+        print_status "Creating 2GB swap file..."
+        fallocate -l 2G /swapfile
+        chmod 600 /swapfile
+        mkswap /swapfile
+        swapon /swapfile
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        
+        # Configure swappiness
+        echo 'vm.swappiness=60' >> /etc/sysctl.conf
+        sysctl -p
+        
+        print_status "Swap space setup complete"
+    fi
 fi
 
 # Check disk space
@@ -114,10 +133,26 @@ if [ "$DNS_CHECK_PASSED" = false ]; then
     fi
 fi
 
-# Start Docker service
+# Start Docker service with memory limits
 print_status "Starting Docker service..."
 systemctl start docker
 systemctl enable docker
+
+# Create Docker daemon config with memory constraints
+print_status "Configuring Docker for low-memory environment..."
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json << EOL
+{
+    "log-driver": "json-file",
+    "log-opts": {
+        "max-size": "10m",
+        "max-file": "3"
+    }
+}
+EOL
+
+# Restart Docker to apply changes
+systemctl restart docker
 
 # Check for .env.example and create .env
 if [ -f .env.example ]; then
@@ -158,11 +193,57 @@ REGISTRATION_ENABLED=true
 EOL
 fi
 
-# Configure Nginx with rate limiting and security headers
+# Create docker-compose override for memory limits
+print_status "Creating Docker Compose memory limits..."
+cat > docker-compose.override.yml << EOL
+version: '3.8'
+
+services:
+  backend:
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+    environment:
+      - WORKERS=2
+      - MAX_WORKERS=2
+      - WORKER_CONNECTIONS=500
+
+  db:
+    command: postgres -c shared_buffers=128MB -c work_mem=4MB -c maintenance_work_mem=32MB
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+
+  redis:
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+    command: redis-server --maxmemory 80mb --maxmemory-policy allkeys-lru
+
+  nginx:
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+EOL
+
+# Configure Nginx with low-memory settings
 print_status "Configuring Nginx..."
 cat > /etc/nginx/sites-available/${DOMAIN_NAME} << EOL
-limit_req_zone \$binary_remote_addr zone=one:10m rate=60r/m;
-proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=app_cache:10m max_size=10g inactive=60m use_temp_path=off;
+# Optimize worker processes for low memory
+worker_processes auto;
+worker_rlimit_nofile 2048;
+events {
+    worker_connections 1024;
+    multi_accept off;
+}
+
+# Configure rate limiting
+limit_req_zone \$binary_remote_addr zone=one:5m rate=60r/m;
+proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=app_cache:5m max_size=1g inactive=60m use_temp_path=off;
 
 server {
     listen 80;
@@ -170,7 +251,15 @@ server {
     
     # Enable gzip compression
     gzip on;
+    gzip_comp_level 2;
+    gzip_min_length 1000;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+    
+    # Client buffer size optimizations
+    client_body_buffer_size 10K;
+    client_header_buffer_size 1k;
+    client_max_body_size 10m;
+    large_client_header_buffers 2 1k;
     
     location / {
         limit_req zone=one burst=10 nodelay;
@@ -181,6 +270,11 @@ server {
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host \$host;
         proxy_cache_bypass \$http_upgrade;
+        
+        # Optimize proxy buffers
+        proxy_buffers 4 256k;
+        proxy_buffer_size 128k;
+        proxy_busy_buffers_size 256k;
         
         # Cache static assets
         location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
