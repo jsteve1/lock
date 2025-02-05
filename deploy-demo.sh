@@ -64,9 +64,8 @@ fi
 
 # Install dependencies for Amazon Linux
 print_status "Installing dependencies..."
-amazon-linux-extras install -y nginx1
 yum update -y
-yum install -y docker bind-utils
+yum install -y docker bind-utils nginx
 
 # Install Docker Compose
 print_status "Installing Docker Compose..."
@@ -81,12 +80,6 @@ pip3 install certbot certbot-nginx
 # Check if ports 80 and 443 are available
 if lsof -Pi :80 -sTCP:LISTEN -t >/dev/null || lsof -Pi :443 -sTCP:LISTEN -t >/dev/null; then
     print_error "Ports 80 or 443 are already in use. Please free these ports first."
-    exit 1
-fi
-
-# Verify we're on a supported OS
-if ! grep -qi "ubuntu\|debian" /etc/os-release; then
-    print_error "This script requires Ubuntu or Debian"
     exit 1
 fi
 
@@ -242,9 +235,10 @@ print_status "Creating data directories..."
 mkdir -p /postgres_data /redis_data /uploads
 chown -R 1000:1000 /postgres_data /redis_data /uploads
 
-# Configure Nginx with low-memory settings
+# Configure Nginx with low-memory settings (Amazon Linux paths)
 print_status "Configuring Nginx..."
-cat > /etc/nginx/sites-available/${DOMAIN_NAME} << EOL
+mkdir -p /etc/nginx/conf.d
+cat > /etc/nginx/conf.d/${DOMAIN_NAME}.conf << EOL
 # Optimize worker processes for low memory
 worker_processes auto;
 worker_rlimit_nofile 2048;
@@ -307,8 +301,8 @@ server {
 }
 EOL
 
-ln -sf /etc/nginx/sites-available/${DOMAIN_NAME} /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
+# Remove default nginx config and restart
+rm -f /etc/nginx/conf.d/default.conf
 nginx -t && systemctl restart nginx
 
 # Get SSL certificate
