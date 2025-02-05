@@ -191,6 +191,9 @@ services:
       resources:
         limits:
           memory: 50M
+    volumes:
+      - /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem:/etc/nginx/ssl/cert.pem:ro
+      - /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem:/etc/nginx/ssl/key.pem:ro
 EOF
 
 # Create necessary data directories and set permissions
@@ -200,51 +203,100 @@ chown -R 1000:1000 /postgres_data /redis_data /uploads
 
 # Configure Nginx – generate a domain-specific configuration without global directives
 print_status "Configuring Nginx..."
-NGINX_CONF_PATH="/etc/nginx/conf.d/${DOMAIN_NAME}.conf"
+NGINX_CONF_PATH="/etc/nginx/nginx.conf"
 cat > ${NGINX_CONF_PATH} <<EOF
-# Note: Removed global directives such as "worker_rlimit_nofile" from this file.
-limit_req_zone \$binary_remote_addr zone=one:5m rate=60r/m;
-proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=app_cache:5m max_size=1g inactive=60m use_temp_path=off;
+# Main nginx configuration
+events {
+    worker_connections 1024;
+}
 
-server {
-    listen 80;
-    server_name ${DOMAIN_NAME};
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
 
-    gzip on;
-    gzip_comp_level 2;
-    gzip_min_length 1000;
-    gzip_types text/plain text/css application/json application/javascript text_xml application_xml application_xml+rss text_javascript;
-    
-    client_body_buffer_size 10K;
-    client_header_buffer_size 1k;
-    client_max_body_size 10m;
-    large_client_header_buffers 2 1k;
-    
-    location / {
-        limit_req zone=one burst=10 nodelay;
-        proxy_pass http://localhost:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_cache_bypass \$http_upgrade;
-        proxy_buffers 4 256k;
-        proxy_buffer_size 128k;
-        proxy_busy_buffers_size 256k;
+    # Logging settings
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
 
-        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
-            proxy_cache app_cache;
-            proxy_cache_use_stale error timeout http_500 http_502 http_503 http_504;
-            proxy_cache_valid 200 60m;
-            add_header X-Cache-Status \$upstream_cache_status;
-            expires 1h;
+    # Basic settings
+    sendfile        on;
+    keepalive_timeout  65;
+    client_max_body_size 100M;
+
+    # Gzip settings
+    gzip  on;
+    gzip_vary on;
+    gzip_min_length 10240;
+    gzip_proxied expired no-cache no-store private auth;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml;
+    gzip_disable "MSIE [1-6]\.";
+
+    # Upstream for backend
+    upstream backend {
+        server backend:8000;
+    }
+
+    # Default server configuration
+    server {
+        listen 80;
+        server_name ${DOMAIN_NAME};
+        return 301 https://\$server_name\$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+        server_name ${DOMAIN_NAME};
+
+        # SSL configuration
+        ssl_certificate /etc/nginx/ssl/cert.pem;
+        ssl_certificate_key /etc/nginx/ssl/key.pem;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+        ssl_prefer_server_ciphers off;
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_timeout 10m;
+
+        # Security headers
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer-when-downgrade" always;
+
+        # API endpoints
+        location /api/ {
+            rewrite ^/api/(.*) /\$1 break;
+            proxy_pass http://backend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host \$host;
+            proxy_cache_bypass \$http_upgrade;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+
+            # CORS headers
+            add_header 'Access-Control-Allow-Origin' 'https://${DOMAIN_NAME}' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE, PATCH' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
         }
-        
-        add_header X-Frame-Options "SAMEORIGIN";
-        add_header X-XSS-Protection "1; mode=block";
-        add_header X-Content-Type-Options "nosniff";
-        add_header Referrer-Policy "strict-origin-when-cross-origin";
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:;";
+
+        # Serve uploaded files
+        location /uploads/ {
+            alias /app/uploads/;
+            expires 1h;
+            add_header Cache-Control "public, no-transform";
+        }
+
+        # Serve frontend static files
+        location / {
+            root /usr/share/nginx/html;
+            try_files \$uri \$uri/ /index.html;
+            expires 1h;
+            add_header Cache-Control "public, no-transform";
+        }
     }
 }
 EOF
