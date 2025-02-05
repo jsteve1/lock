@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     ffmpeg \
     curl \
+    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -52,7 +53,12 @@ COPY alembic.ini .
 # Create necessary directories
 RUN mkdir -p uploads
 
-# Create uploads directory and set permissions
+# Copy and prepare entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN dos2unix /usr/local/bin/docker-entrypoint.sh && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Set permissions
 RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
@@ -65,11 +71,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Set the entrypoint script
-COPY docker-entrypoint.sh /usr/local/bin/
-USER root
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-USER appuser
-
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["fastapi"] 
