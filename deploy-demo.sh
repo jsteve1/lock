@@ -62,11 +62,47 @@ if [ $MEMORY_GB -lt 2 ]; then
     fi
 fi
 
-# Check disk space
+# Check disk space and optimize if needed
+print_status "Checking disk space..."
 DISK_GB=$(df -BG / | awk 'NR==2 {print $4}' | tr -d 'G')
-if [ $DISK_GB -lt 20 ]; then
-    print_error "Insufficient disk space. Minimum 20GB required. Found: ${DISK_GB}GB"
-    exit 1
+if [ $DISK_GB -lt 4 ]; then
+    print_warning "Low disk space detected (${DISK_GB}GB). Optimizing for small disk..."
+    
+    # Clean up unnecessary packages and cache
+    print_status "Cleaning up system packages..."
+    apt-get clean
+    apt-get autoremove -y
+    
+    # Clear systemd journal logs
+    print_status "Clearing old logs..."
+    journalctl --vacuum-time=1d
+    
+    # Configure Docker to use overlay2 with minimal storage
+    print_status "Optimizing Docker storage..."
+    cat > /etc/docker/daemon.json << EOL
+{
+    "log-driver": "json-file",
+    "log-opts": {
+        "max-size": "10m",
+        "max-file": "1"
+    },
+    "storage-driver": "overlay2",
+    "storage-opts": [
+        "overlay2.size=2G"
+    ]
+}
+EOL
+
+    # Recalculate available space
+    DISK_GB=$(df -BG / | awk 'NR==2 {print $4}' | tr -d 'G')
+    if [ $DISK_GB -lt 2 ]; then
+        print_error "Critical: Insufficient disk space even after optimization. Minimum 2GB required. Found: ${DISK_GB}GB"
+        exit 1
+    fi
+    
+    print_warning "Disk space optimized. Continuing with limited storage configuration..."
+else
+    print_status "Disk space check passed. Available: ${DISK_GB}GB"
 fi
 
 # Install dependencies first for DNS checks
@@ -193,8 +229,8 @@ REGISTRATION_ENABLED=true
 EOL
 fi
 
-# Create docker-compose override for memory limits
-print_status "Creating Docker Compose memory limits..."
+# Create docker-compose override for resource limits
+print_status "Creating Docker Compose resource limits..."
 cat > docker-compose.override.yml << EOL
 version: '3.8'
 
@@ -208,27 +244,65 @@ services:
       - WORKERS=2
       - MAX_WORKERS=2
       - WORKER_CONNECTIONS=500
+      - UPLOAD_DIR=/app/uploads
+      - MAX_UPLOAD_SIZE=5242880  # Reduce max upload size to 5MB
+    volumes:
+      - uploads:/app/uploads
 
   db:
-    command: postgres -c shared_buffers=128MB -c work_mem=4MB -c maintenance_work_mem=32MB
+    command: postgres -c shared_buffers=128MB -c work_mem=4MB -c maintenance_work_mem=32MB -c temp_file_limit=64MB
     deploy:
       resources:
         limits:
           memory: 200M
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+      - PGDATA=/var/lib/postgresql/data/pgdata
 
   redis:
     deploy:
       resources:
         limits:
           memory: 100M
-    command: redis-server --maxmemory 80mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 80mb --maxmemory-policy allkeys-lru --save "" --appendonly no
+    volumes:
+      - redis_data:/data
 
   nginx:
     deploy:
       resources:
         limits:
           memory: 100M
+    volumes:
+      - uploads:/app/uploads:ro
+
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /postgres_data
+      o: bind
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /redis_data
+      o: bind
+  uploads:
+    driver: local
+    driver_opts:
+      type: none
+      device: /uploads
+      o: bind
 EOL
+
+# Create necessary directories with minimal sizes
+print_status "Creating data directories..."
+mkdir -p /postgres_data /redis_data /uploads
+chown -R 1000:1000 /postgres_data /redis_data /uploads
 
 # Configure Nginx with low-memory settings
 print_status "Configuring Nginx..."
