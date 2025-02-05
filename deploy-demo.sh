@@ -32,7 +32,7 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Check system requirements
+# Check OS and install dependencies
 print_status "Checking system requirements..."
 
 # Check memory and setup swap if needed
@@ -62,10 +62,21 @@ if [ $MEMORY_GB -lt 2 ]; then
     fi
 fi
 
-# Install dependencies first for DNS checks
+# Install dependencies for Amazon Linux
 print_status "Installing dependencies..."
-apt-get update
-apt-get install -y docker.io docker-compose nginx certbot python3-certbot-nginx bind9-host dnsutils
+amazon-linux-extras install -y nginx1
+yum update -y
+yum install -y docker bind-utils
+
+# Install Docker Compose
+print_status "Installing Docker Compose..."
+curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+
+# Install certbot
+print_status "Installing certbot..."
+yum install -y python3-pip
+pip3 install certbot certbot-nginx
 
 # Check if ports 80 and 443 are available
 if lsof -Pi :80 -sTCP:LISTEN -t >/dev/null || lsof -Pi :443 -sTCP:LISTEN -t >/dev/null; then
@@ -126,10 +137,12 @@ if [ "$DNS_CHECK_PASSED" = false ]; then
     fi
 fi
 
-# Start Docker service with memory limits
-print_status "Starting Docker service..."
+# Start and enable services
+print_status "Starting services..."
 systemctl start docker
 systemctl enable docker
+systemctl start nginx
+systemctl enable nginx
 
 # Configure minimal Docker settings
 print_status "Configuring Docker..."
