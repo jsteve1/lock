@@ -97,15 +97,22 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 # Get public IP
+print_status "Detecting public IP..."
 PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
 if [ -z "$PUBLIC_IP" ]; then
-    print_error "Could not determine EC2 public IP"
-    exit 1
+    print_warning "Could not automatically detect EC2 public IP"
+    read -p "Please enter your server's public IP address: " PUBLIC_IP
+    if [ -z "$PUBLIC_IP" ]; then
+        print_error "Public IP is required"
+        exit 1
+    fi
 fi
+
+print_status "Using public IP: ${PUBLIC_IP}"
 
 # Check DNS settings and wait for propagation
 print_warning "Checking DNS configuration for ${DOMAIN_NAME}..."
-print_warning "Your EC2 public IP is: ${PUBLIC_IP}"
+print_warning "Your server's public IP is: ${PUBLIC_IP}"
 
 DNS_CHECK_PASSED=false
 for i in {1..3}; do
@@ -123,10 +130,19 @@ done
 if [ "$DNS_CHECK_PASSED" = false ]; then
     print_warning "DNS has not propagated yet. This is normal and might take up to 24 hours."
     print_warning "Please ensure you have set up an A record for ${DOMAIN_NAME} pointing to ${PUBLIC_IP}"
-    read -p "Continue anyway? (y/n) " -n 1 -r
+    read -p "Would you like to continue anyway? This means SSL setup might fail. (y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_status "Deployment cancelled. Please try again after DNS has propagated."
         exit 1
+    fi
+    
+    print_warning "Continuing without verified DNS. SSL certificate setup might fail."
+    read -p "Would you like to skip SSL setup for now? (y/n) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        SKIP_SSL=true
+        print_warning "SSL setup will be skipped. You can run certbot manually later."
     fi
 fi
 
@@ -305,9 +321,24 @@ EOL
 rm -f /etc/nginx/conf.d/default.conf
 nginx -t && systemctl restart nginx
 
-# Get SSL certificate
-print_status "Obtaining SSL certificate..."
-certbot --nginx -d ${DOMAIN_NAME} --non-interactive --agree-tos -m ${EMAIL}
+# SSL Certificate Setup
+if [ "$SKIP_SSL" != "true" ]; then
+    print_status "Obtaining SSL certificate..."
+    if certbot --nginx -d ${DOMAIN_NAME} --non-interactive --agree-tos -m ${EMAIL}; then
+        print_status "SSL certificate obtained successfully"
+    else
+        print_error "SSL certificate setup failed"
+        print_warning "You can set up SSL later by running: certbot --nginx -d ${DOMAIN_NAME}"
+        read -p "Would you like to continue with deployment anyway? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+else
+    print_warning "Skipping SSL setup as requested"
+    print_warning "You can set up SSL later by running: certbot --nginx -d ${DOMAIN_NAME}"
+fi
 
 # Start application
 print_status "Starting application..."
