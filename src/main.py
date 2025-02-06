@@ -49,7 +49,7 @@ for route in router.routes:
     logger.debug(f"  {route.path} [{route.methods}]")
 
 # Include the router
-app.include_router(router, prefix="/api")
+app.include_router(router)
 
 # Add debug print after including router
 logger.debug("All application routes:")
