@@ -58,7 +58,7 @@ print_status "Installing dependencies..."
 if grep -qi 'amazon linux' /etc/os-release; then
     print_status "Detected Amazon Linux"
     yum update -y
-    yum install -y docker bind-utils nginx python3-pip
+    yum install -y docker bind-utils nginx python3-pip nodejs npm
     pip3 install certbot certbot-nginx
 else
     print_status "Detected Debian/Ubuntu"
@@ -314,6 +314,13 @@ http {
     }
 }
 EOF
+
+# Before starting the application with Docker Compose
+print_status "Building frontend..."
+cd frontend
+npm install
+npm run build -- --mode production
+cd ..
 
 # Start the application using Docker Compose
 print_status "Starting application..."
