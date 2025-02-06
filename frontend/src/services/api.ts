@@ -3,7 +3,7 @@ import { generateEncryptionKey } from './encryption';
 import { refreshToken, logout } from '../store/auth';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-const API_URL = import.meta.env.PROD ? `${BASE_URL}/api` : BASE_URL;
+const API_URL = import.meta.env.PROD ? `${BASE_URL}/api` : BASE_URL;  // Keep this original version
 
 const api = axios.create({
   baseURL: API_URL,
