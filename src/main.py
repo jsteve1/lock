@@ -27,7 +27,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS middleware setup with proper preflight handling
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://localhost"],
+    allow_origins=["http://localhost:5173", "https://localhost", "https://lockedin.bidseek.dev"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
@@ -38,7 +38,7 @@ app.add_middleware(
 # OAuth2 scheme for JWT token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# Include the router
+# Include the router - this is all we need since all routes are in routes.py
 app.include_router(router, prefix="/api")
 
 @app.get("/")
