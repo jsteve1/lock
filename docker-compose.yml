@@ -71,8 +71,8 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./uploads:/app/uploads:ro
       - ./frontend/dist:/usr/share/nginx/html:ro
-      - /etc/letsencrypt/live/lockedin.bidseek.dev/fullchain.pem:/etc/nginx/ssl/cert.pem:ro
-      - /etc/letsencrypt/live/lockedin.bidseek.dev/privkey.pem:/etc/nginx/ssl/key.pem:ro
+      - /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem:/etc/nginx/ssl/cert.pem:ro
+      - /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem:/etc/nginx/ssl/key.pem:ro
     depends_on:
       - backend
     networks:
