@@ -65,9 +65,11 @@ export default function Header() {
                 </svg>
               </button>
             )}
-            <h1 class={`text-xl font-medium ${theme.text}`}>Lock</h1>
-          </div>
+           <div class="flex items-center gap-2">
 
+              <h1 class={`text-xl font-medium ${theme.text}`}>NoteLocker</h1>
+            </div>
+          </div>
           <div class="flex items-center gap-2">
             {isAuthenticated.value && (
               <button
@@ -140,4 +142,4 @@ export default function Header() {
       )}
     </>
   );
-} 
+}

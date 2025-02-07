@@ -19,9 +19,12 @@ logger = logging.getLogger(__name__)
 models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI(
-    title="Keep Clone API",
-    description="A secure, scalable Google Keep clone API",
-    version="1.0.0"
+    title="NoteLocker: API",
+    description="A secure, scalable NoteLocker API",
+    version="1.0.0",
+    openapi_url="/api/openapi.json",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc"
 )
 
 # Rate limiting setup
