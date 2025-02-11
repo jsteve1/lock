@@ -2,8 +2,9 @@ import { route } from 'preact-router';
 import { isAuthenticated, setAuthenticated } from '../store/auth';
 import { useState } from 'preact/hooks';
 import { getThemeClasses, Theme, ThemeClasses } from '../theme';
-import { currentTheme } from '../store/theme';
+import { currentTheme, useSystemTheme } from '../store/theme';
 import NoteEditorOverlay from './NoteEditorOverlay';
+import { PcDisplay } from 'react-bootstrap-icons';
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -17,9 +18,16 @@ export default function Header() {
 
   const handleThemeChange = () => {
     const modes: Theme[] = ['light', 'dark', 'night'];
-    const currentIndex = modes.indexOf(currentTheme.value);
-    const nextIndex = (currentIndex + 1) % modes.length;
-    currentTheme.value = modes[nextIndex];
+    const currentIndex = useSystemTheme.value ? -1 : modes.indexOf(currentTheme.value);
+    const nextIndex = (currentIndex + 1) % (modes.length + 1);
+    
+    if (nextIndex === modes.length) {
+      // Switch to system theme
+      useSystemTheme.value = true;
+    } else {
+      useSystemTheme.value = false;
+      currentTheme.value = modes[nextIndex];
+    }
   };
 
   const handleCreateNote = () => {
@@ -27,6 +35,10 @@ export default function Header() {
   };
 
   const getThemeIcon = () => {
+    if (useSystemTheme.value) {
+      return <PcDisplay className="h-6 w-6" />;
+    }
+
     switch (currentTheme.value) {
       case 'light':
         return (
@@ -65,8 +77,7 @@ export default function Header() {
                 </svg>
               </button>
             )}
-           <div class="flex items-center gap-2">
-
+            <div class="flex items-center gap-2">
               <h1 class={`text-xl font-medium ${theme.text}`}>NoteLocker</h1>
             </div>
           </div>
@@ -84,7 +95,8 @@ export default function Header() {
             )}
             <button
               onClick={handleThemeChange}
-              class={`p-2 rounded-full ${theme.text} ${theme.buttonHover}`}
+              class={`p-2 rounded-full ${theme.text} ${theme.buttonHover} ${useSystemTheme.value ? 'bg-blue-500/10' : ''}`}
+              title={useSystemTheme.value ? 'Using system theme' : `Current theme: ${currentTheme.value}`}
             >
               {getThemeIcon()}
             </button>

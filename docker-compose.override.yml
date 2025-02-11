@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  backend:
+    environment:
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:8080
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./ssl:/app/ssl:ro
+      - ./src:/app/src
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  redis:
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./uploads:/app/uploads:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
