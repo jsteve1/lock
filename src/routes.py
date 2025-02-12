@@ -41,8 +41,9 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     }
 
 @router.post("/token/refresh", response_model=schemas.Token)
-async def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
+async def refresh_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     # Verify the refresh token
+    refresh_token = form_data.password  # FastAPI's OAuth2PasswordRequestForm uses password field for the token
     payload = security.verify_token(refresh_token)
     if not payload:
         raise HTTPException(

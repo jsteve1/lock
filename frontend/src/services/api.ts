@@ -81,7 +81,15 @@ export const authApi = {
   },
 
   refreshToken: async (refreshToken: string) => {
-    const response = await api.post('/token/refresh', { refresh_token: refreshToken });
+    const formData = new URLSearchParams();
+    formData.set('username', 'refresh');  // Dummy username for refresh token
+    formData.set('password', refreshToken);  // Send refresh token as password
+    
+    const response = await api.post('/token/refresh', formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
     return response.data;
   },
 };

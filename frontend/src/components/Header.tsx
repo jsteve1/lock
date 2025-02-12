@@ -1,15 +1,27 @@
 import { route } from 'preact-router';
 import { isAuthenticated, setAuthenticated } from '../store/auth';
-import { useState } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { getThemeClasses, Theme, ThemeClasses } from '../theme';
 import { currentTheme, useSystemTheme } from '../store/theme';
 import NoteEditorOverlay from './NoteEditorOverlay';
-import { PcDisplay } from 'react-bootstrap-icons';
+import { PcDisplay, Lightbulb, Archive, Trash3 } from 'react-bootstrap-icons';
 
 export default function Header() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isMenuCollapsed, setIsMenuCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const theme: ThemeClasses = getThemeClasses();
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+      setIsMenuCollapsed(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const handleLogout = () => {
     setAuthenticated(false);
@@ -64,12 +76,13 @@ export default function Header() {
 
   return (
     <>
+      {/* Main Header */}
       <header class={`fixed top-0 left-0 right-0 z-40 ${theme.paper} border-b ${theme.border}`}>
         <div class="flex items-center justify-between px-4 h-14">
           <div class="flex items-center gap-4">
             {isAuthenticated.value && (
               <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                onClick={() => setIsMenuCollapsed(!isMenuCollapsed)}
                 class={`p-2 rounded-full ${theme.buttonHover}`}
               >
                 <svg class="w-6 h-6" fill="none" stroke={theme.svgStroke} viewBox="0 0 24 24">
@@ -84,7 +97,7 @@ export default function Header() {
           <div class="flex items-center gap-2">
             {isAuthenticated.value && (
               <button
-                onClick={handleCreateNote}
+                onClick={() => setIsEditorOpen(true)}
                 class={`p-2 rounded-full ${theme.buttonHover}`}
                 title="Create new note"
               >
@@ -110,48 +123,56 @@ export default function Header() {
             )}
           </div>
         </div>
-
-        {/* Side Menu */}
-        {isMenuOpen && isAuthenticated.value && (
-          <>
-            <div
-              class="fixed inset-0 z-50 bg-black bg-opacity-50 transition-opacity"
-              onClick={() => setIsMenuOpen(false)}
-            />
-            <div 
-              class={`fixed left-0 top-0 bottom-0 z-50 w-[300px] ${theme.paper} border-r ${theme.border} transform transition-transform duration-300 ease-in-out ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
-            >
-              <div class="p-4">
-                <button
-                  onClick={() => { route('/'); setIsMenuOpen(false); }}
-                  class={`block w-full text-left px-4 py-2 rounded-md ${theme.text} ${theme.buttonHover}`}
-                >
-                  Notes
-                </button>
-                <button
-                  onClick={() => { route('/archive'); setIsMenuOpen(false); }}
-                  class={`block w-full text-left px-4 py-2 rounded-md ${theme.text} ${theme.buttonHover}`}
-                >
-                  Archive
-                </button>
-                <button
-                  onClick={() => { route('/trash'); setIsMenuOpen(false); }}
-                  class={`block w-full text-left px-4 py-2 rounded-md ${theme.text} ${theme.buttonHover}`}
-                >
-                  Trash
-                </button>
-              </div>
-            </div>
-          </>
-        )}
       </header>
 
-      {/* Note Editor Overlay */}
-      {isEditorOpen && (
-        <NoteEditorOverlay
-          onClose={() => setIsEditorOpen(false)}
-        />
-      )}
+      <div class="flex pt-14">
+        {/* Persistent Side Menu - Only show when authenticated */}
+        {isAuthenticated.value && (
+          <aside 
+            class={`fixed left-0 top-14 bottom-0 z-30 ${theme.paper} border-r ${theme.border} transform transition-all duration-300 ease-in-out ${
+              isMenuCollapsed ? 'w-0 -translate-x-full md:w-16 md:translate-x-0' : 'w-64'
+            }`}
+          >
+            <div class="flex flex-col h-full py-2">
+              <button
+                onClick={() => { route('/'); }}
+                class={`flex items-center gap-4 px-4 py-3 rounded-r-full mx-2 ${theme.text} ${theme.buttonHover}`}
+              >
+                <Lightbulb className="w-6 h-6" />
+                {!isMenuCollapsed && <span>Notes</span>}
+              </button>
+              <button
+                onClick={() => { route('/archive'); }}
+                class={`flex items-center gap-4 px-4 py-3 rounded-r-full mx-2 ${theme.text} ${theme.buttonHover}`}
+              >
+                <Archive className="w-6 h-6" />
+                {!isMenuCollapsed && <span>Archive</span>}
+              </button>
+              <button
+                onClick={() => { route('/trash'); }}
+                class={`flex items-center gap-4 px-4 py-3 rounded-r-full mx-2 ${theme.text} ${theme.buttonHover}`}
+              >
+                <Trash3 className="w-6 h-6" />
+                {!isMenuCollapsed && <span>Trash</span>}
+              </button>
+            </div>
+          </aside>
+        )}
+
+        {/* Main Content Area */}
+        <main class={`flex-1 transition-all duration-300 ease-in-out ${
+          isAuthenticated.value ? (isMenuCollapsed ? 'ml-0 md:ml-16' : 'ml-0 md:ml-64') : ''
+        }`}>
+          <div class="max-w-3xl mx-auto p-4">
+            {/* Note Editor Overlay */}
+            {isEditorOpen && (
+              <NoteEditorOverlay
+                onClose={() => setIsEditorOpen(false)}
+              />
+            )}
+          </div>
+        </main>
+      </div>
     </>
   );
 }

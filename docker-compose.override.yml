@@ -3,7 +3,6 @@ version: '3.8'
 services:
   backend:
     environment:
-      - CORS_ORIGINS=http://localhost:5173,http://localhost:8080
       - PYTHONUNBUFFERED=1
     ports:
       - "8002:8000"

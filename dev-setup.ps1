@@ -141,7 +141,6 @@ version: '3.8'
 services:
   backend:
     environment:
-      - CORS_ORIGINS=http://localhost:5173
       - PYTHONUNBUFFERED=1
     ports:
       - "8002:8000"
@@ -200,7 +199,7 @@ http {
 
     # Logging settings
     access_log /var/log/nginx/access.log;
-    error_log /var/log/nginx/error.log;
+    error_log /var/log/nginx/error.log debug;
 
     # Basic settings
     sendfile        on;
@@ -212,71 +211,39 @@ http {
     gzip_vary on;
     gzip_min_length 10240;
     gzip_proxied expired no-cache no-store private auth;
-    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml application/json;
     gzip_disable "MSIE [1-6]\.";
-
-    map $request_method $cors_method {
-        OPTIONS 204;
-        default 404;
-    }
 
     # HTTP server
     server {
         listen 80;
         server_name localhost;
 
-        # Global CORS settings
-        add_header Access-Control-Allow-Origin "http://localhost:5173" always;
-        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS, PUT, DELETE, PATCH" always;
-        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
-        add_header Access-Control-Allow-Credentials "true" always;
-        add_header Access-Control-Max-Age "1728000" always;
-
-        # Handle preflight requests
-        if ($request_method = OPTIONS) {
-            return 204;
-        }
-
-        # API endpoints with /api prefix
+        # API endpoints
         location /api/ {
-            rewrite ^/api/(.*) /$1 break;
-            proxy_pass http://backend:8000;
+            proxy_pass http://backend:8000/;
             proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection upgrade;
             proxy_set_header Host $host;
-            proxy_cache_bypass $http_upgrade;
             proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        # Direct endpoints without /api prefix (e.g., /users, /token)
-        location ~ ^/(users|token) {
+        # Direct endpoints
+        location ~ ^/(users|token|notes) {
             proxy_pass http://backend:8000;
             proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection upgrade;
             proxy_set_header Host $host;
-            proxy_cache_bypass $http_upgrade;
             proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
         }
 
         # Serve uploaded files
         location /uploads/ {
             alias /app/uploads/;
-            expires 1h;
-            add_header Cache-Control "public, no-transform";
         }
 
         # Serve frontend static files
         location / {
             root /usr/share/nginx/html;
             try_files $uri $uri/ /index.html;
-            expires 1h;
-            add_header Cache-Control "public, no-transform";
         }
     }
 }
@@ -285,6 +252,87 @@ http {
 # Create data directories
 Write-Status "Creating data directories..."
 New-Item -ItemType Directory -Force -Path uploads | Out-Null
+
+# Update main.py with correct CORS configuration
+Write-Status "Updating CORS configuration in main.py..."
+$mainPyContent = @'
+from fastapi import FastAPI, HTTPException, Depends, Request, status, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from datetime import datetime, timedelta
+import uvicorn
+import logging
+
+from . import models, database
+from .routes import router
+
+# Add debug logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Create database tables
+models.Base.metadata.create_all(bind=database.engine)
+
+app = FastAPI(
+    title="NoteLocker: API",
+    description="A secure, scalable NoteLocker API",
+    version="1.0.0",
+    openapi_url="/api/openapi.json",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc"
+)
+
+# Rate limiting setup
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS middleware setup - wide open for development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,  # Must be False when using allow_origins=["*"]
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
+
+# OAuth2 scheme for JWT token authentication
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# Add debug print before including router
+logger.debug("Available routes in router:")
+for route in router.routes:
+    logger.debug(f"  {route.path} [{route.methods}]")
+
+# Include the router
+app.include_router(router)
+
+# Add debug print after including router
+logger.debug("All application routes:")
+for route in app.routes:
+    logger.debug(f"  {route.path} [{route.methods}]")
+
+@app.get("/")
+@limiter.limit("5/minute")
+async def root(request: Request):
+    return {"message": "Welcome to Keep Clone API", "status": "active"}
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for container orchestration."""
+    return {"status": "healthy"}
+
+@app.post("/api/test")
+async def test_endpoint():
+    return {"message": "test endpoint works"}
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+'@ | Out-File -FilePath src/main.py -Encoding utf8
 
 # Build frontend
 Write-Status "Building frontend..."

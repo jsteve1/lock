@@ -48,7 +48,7 @@ export default function App() {
   return (
     <div class={`min-h-screen flex flex-col ${theme.background}`}>
       <Header />
-      <main class={`flex-1 pt-16 pb-8 ${theme.background}`} style={{ height: '100%', padding: '0px' }}>
+      <main class={`flex-1 pt-16 pb-8 ${theme.background}`} style={{ height: '100%', padding: '0px', marginTop: '-50px' }}>
         <Router onChange={handleRoute}>
           <NotesList path="/" />
           <NotesList path="/archive" />
