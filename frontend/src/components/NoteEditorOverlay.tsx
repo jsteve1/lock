@@ -189,7 +189,19 @@ export default function NoteEditorOverlay({ note, onClose }: NoteEditorOverlayPr
   const [title, setTitle] = useState(note?.title || '');
   const [content, setContent] = useState(note?.content || '');
   const [isPinned, setIsPinned] = useState(note?.is_pinned || false);
-  const [color, setColor] = useState(note?.color || '#ffffff');
+  const theme = getThemeClasses();
+  const isNightMode = localStorage.getItem('theme') === 'night';
+  const isDarkMode = localStorage.getItem('theme') === 'dark';
+  
+  // Get default color based on current theme
+  const getDefaultColor = () => {
+    if (isNightMode) return '#2d2e31';
+    if (isDarkMode) return '#2d2e31';
+    return '#ffffff';
+  };
+  
+  const defaultColor = getDefaultColor();
+  const [color, setColor] = useState(note?.color || defaultColor);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -201,7 +213,7 @@ export default function NoteEditorOverlay({ note, onClose }: NoteEditorOverlayPr
     content: '',
     is_pinned: false,
     status: 'active',
-    color: '#ffffff', // Default color for new notes
+    color: defaultColor,
     attachments: [],
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -209,17 +221,13 @@ export default function NoteEditorOverlay({ note, onClose }: NoteEditorOverlayPr
   const [tempBlobUrls, setTempBlobUrls] = useState<Record<number, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const theme = getThemeClasses();
   const [isNewNote, setIsNewNote] = useState(!note?.id);
 
-  // Get current theme
-  const isNightMode = localStorage.getItem('theme') === 'night';
-
   // Get the current text color based on background
-  const currentBgColor = isNightMode ? '#1a1a1a' : color;
-  const textColor = isNightMode ? 'text-red-500' : getTextColorForBackground(currentBgColor);
-  const textColorSecondary = isNightMode ? 'text-red-500' : `${getTextColorForBackground(currentBgColor)} opacity-75`;
-  const borderColor = isNightMode ? 'border-red-500 border-opacity-20' : getBorderColorForBackground(currentBgColor);
+  const currentBgColor = isNewNote ? defaultColor : (isNightMode ? '#1a1a1a' : color);
+  const textColor = isNewNote ? theme.text : (isNightMode ? 'text-red-500' : getTextColorForBackground(currentBgColor));
+  const textColorSecondary = isNewNote ? theme.textSecondary : (isNightMode ? 'text-red-500' : `${getTextColorForBackground(currentBgColor)} opacity-75`);
+  const borderColor = isNewNote ? theme.border : (isNightMode ? 'border-red-500 border-opacity-20' : getBorderColorForBackground(currentBgColor));
 
   useEffect(() => {
     const loadFullNote = async () => {
@@ -507,7 +515,7 @@ export default function NoteEditorOverlay({ note, onClose }: NoteEditorOverlayPr
       content: '',
       is_pinned: false,
       status: 'active',
-      color: '#ffffff',
+      color: defaultColor,
       attachments: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()

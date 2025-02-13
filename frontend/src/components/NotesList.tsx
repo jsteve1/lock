@@ -26,7 +26,7 @@ function getTextColorForBackground(hexColor: string): string {
 
 // Get border color based on background color
 function getBorderColorForBackground(hexColor: string): string {
-  return isLightColor(hexColor) ? 'border-gray-200 hover:border-gray-300' : 'border-gray-600 hover:border-gray-500';
+  return isLightColor(hexColor) ? 'border-gray-100 hover:border-gray-200' : 'border-gray-600 hover:border-gray-500';
 }
 
 interface NotesListProps {
@@ -73,9 +73,9 @@ function AttachmentPreview({ attachment }: { attachment: Attachment }) {
       <img
         src={imageUrl}
         alt={attachment.filename}
-        class={`w-20 h-20 object-cover rounded-lg border ${theme.border}`}
+        class={`w-20 h-20 object-cover rounded-lg border ${theme.border} hover:shadow-md hover:scale-105 transition-all duration-200`}
       />
-      <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity rounded-lg" />
+      
     </div>
   );
 }
@@ -91,8 +91,8 @@ function NoteAttachments({ note }: { note: Note }) {
   return (
     <>
       <div class={`border-t ${theme.divider}`} />
-      <div class="px-4 py-2 space-y-2">
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div class="px-4 py-2">
+        <div class="grid grid-cols-4 gap-2">
           {attachments.slice(0, 4).map((attachment) => (
             <AttachmentPreview key={attachment.id} attachment={attachment} />
           ))}
@@ -102,7 +102,7 @@ function NoteAttachments({ note }: { note: Note }) {
           <>
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              class={`text-sm ${theme.text} hover:opacity-80 flex items-center gap-1 transition-colors duration-200`}
+              class={`text-sm ${theme.text} hover:opacity-80 flex items-center gap-1 transition-colors duration-200 mt-2`}
             >
               <span>{isExpanded ? 'Show less' : `Show ${attachments.length - 4} more`}</span>
               <svg
@@ -116,7 +116,7 @@ function NoteAttachments({ note }: { note: Note }) {
             </button>
             
             <div
-              class={`grid grid-cols-2 sm:grid-cols-4 gap-2 transition-all duration-300 ease-in-out overflow-hidden ${
+              class={`grid grid-cols-4 gap-2 transition-all duration-300 ease-in-out overflow-hidden mt-2 ${
                 isExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
               }`}
             >
@@ -142,19 +142,16 @@ export default function NotesList({ path }: NotesListProps) {
   // Get the current section based on path
   const currentSection = path?.split('/')[1] || 'notes';
 
-  // Initial load of notes
+  // Subscribe to notes signal changes
   useEffect(() => {
-    if (!isAuthenticated.value) {
-      route('/login');
-      return;
-    }
-
+    // Initial load
     const fetchNotes = async () => {
       try {
         setIsLoading(true);
         const fetchedNotes = await notesApi.getNotes();
         const filteredNotes = fetchedNotes.filter((note: Note) => note.content !== "" && note.title !== "");
         setAllNotes(filteredNotes || []);
+        notes.value = fetchedNotes; // Update the signal
       } catch (error) {
         console.error('Failed to fetch notes:', error);
         setError('Failed to load notes');
@@ -162,8 +159,19 @@ export default function NotesList({ path }: NotesListProps) {
         setIsLoading(false);
       }
     };
-    fetchNotes();
+
+    if (isAuthenticated.value) {
+      fetchNotes();
+    } else {
+      route('/login');
+    }
   }, []); // Only run on mount
+
+  // Update local state when notes signal changes
+  useEffect(() => {
+    const filteredNotes = notes.value.filter((note: Note) => note.content !== "" && note.title !== "");
+    setAllNotes(filteredNotes);
+  }, [notes.value]); // Re-run when notes signal changes
 
   const handleCreateNote = () => {
     setSelectedNote(undefined);
@@ -181,14 +189,15 @@ export default function NotesList({ path }: NotesListProps) {
       setAllNotes(prev => {
         const index = prev.findIndex(n => n.id === savedNote.id);
         if (index >= 0) {
-          // Update existing note
+          // If note exists, update it (including status changes)
           const newNotes = [...prev];
           newNotes[index] = savedNote;
           return newNotes;
-        } else {
-          // Add new note
+        } else if (savedNote.status === 'active') {
+          // Only add new notes if they're active
           return [...prev, savedNote];
         }
+        return prev;
       });
     }
     setSelectedNote(undefined);

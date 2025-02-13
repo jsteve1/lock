@@ -1,6 +1,8 @@
-# Keep Clone
+# NoteLocker
 
-A secure, scalable, and feature-rich note-taking application inspired by Google Keep. Built with FastAPI, Preact, and modern web technologies.
+A secure, end-to-end encrypted note-taking application with a focus on privacy and security. Built with FastAPI, Preact, and modern web technologies.
+
+![NoteLocker Application Screenshot](screenshot.png)
 
 ## Features
 
@@ -40,8 +42,8 @@ A secure, scalable, and feature-rich note-taking application inspired by Google 
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/keepclone.git
-   cd keepclone
+   git clone https://github.com/yourusername/notelocker.git
+   cd notelocker
    ```
 
 2. Set up environment variables:
@@ -132,7 +134,7 @@ For manual deployment, refer to the detailed instructions in [DEPLOYMENT.md](DEP
 ## Architecture
 
 ```
-keepclone/
+notelocker/
 ├── src/                 # Backend source code
 ├── frontend/           # Frontend source code
 ├── alembic/            # Database migrations
@@ -160,6 +162,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- Inspired by Google Keep
 - Built with modern open-source technologies
 - Community contributions welcome 
