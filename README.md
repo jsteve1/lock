@@ -2,7 +2,7 @@
 
 A secure, end-to-end encrypted note-taking application with a focus on privacy and security. Built with FastAPI, Preact, and modern web technologies.
 
-![NoteLocker Application Screenshot](screenshot.png)
+![NoteLocker Application Screenshot](screenshot.PNG)
 
 ## Features
 
